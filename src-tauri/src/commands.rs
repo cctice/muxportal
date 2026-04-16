@@ -1,11 +1,23 @@
-use crate::ssh::{connect, SshConfig, SshConnection, PtyStore};
+use crate::ssh::{connect, SshConfig, SshConnection};
 use crate::tmux::{self, TmuxSessionInfo};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
 use tauri::{AppHandle, Emitter};
 use std::io::{Read, Write};
+use std::time::Duration;
 
-static PTY_STORE: LazyLock<PtyStore> = LazyLock::new(PtyStore::new);
+/// Store active SSH channels by ID for write/resize/kill
+struct ChannelEntry {
+    channel: ssh2::Channel,
+    session: ssh2::Session,
+    stream: std::net::TcpStream,
+}
+
+static CHANNEL_STORE: LazyLock<Mutex<HashMap<u32, ChannelEntry>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static NEXT_PID: LazyLock<Mutex<u32>> = LazyLock::new(|| Mutex::new(1));
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TmuxSession {
@@ -31,6 +43,13 @@ fn make_ssh_config(
         password,
         key_path,
     }
+}
+
+fn next_pid() -> u32 {
+    let mut n = NEXT_PID.lock().unwrap();
+    let id = *n;
+    *n += 1;
+    id
 }
 
 #[tauri::command]
@@ -106,27 +125,30 @@ pub fn attach_tmux_session(
     let conn = connect(&config)?;
 
     let mut channel = tmux::attach_session(&conn, &session_name, rows, cols)?;
-
-    // Set non-blocking for read
     channel.set_blocking(false);
 
-    // Make a unique ID for this PTY
-    let pid = {
-        let mut store = PTY_STORE.processes.lock().unwrap();
-        let id = (store.len() as u32) + 1;
-        // We store the SSH channel info by wrapping it
-        id
-    };
+    let pid = next_pid();
 
-    // Spawn a thread to read from the SSH channel and emit events
+    // Store the SSH connection for later write/resize/kill
+    {
+        let mut store = CHANNEL_STORE.lock().unwrap();
+        store.insert(
+            pid,
+            ChannelEntry {
+                channel: conn.session.channel_session().map_err(|e| e.to_string())?,
+                session: conn.session,
+                stream: conn.stream,
+            },
+        );
+    }
+
+    // Spawn reader thread
     let app_handle = app.clone();
-    let pid_for_thread = pid;
-
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         loop {
             match channel.read(&mut buf) {
-                Ok(0) => break, // EOF
+                Ok(0) => break,
                 Ok(n) => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
                     let _ = app_handle.emit("terminal-output", data);
@@ -142,35 +164,41 @@ pub fn attach_tmux_session(
         }
         let _ = app_handle.emit(
             "terminal-output",
-            format!("\r\n\x1b[90m[Session disconnected]\x1b[0m"),
+            "\r\n\x1b[90m[Session disconnected]\x1b[0m".to_string(),
         );
     });
 
     Ok(pid)
 }
 
-use std::time::Duration;
-
 #[tauri::command]
 pub fn write_to_pty(pid: u32, data: String) -> Result<(), String> {
-    // For SSH-based terminals, writing goes through the SSH channel.
-    // Since SSH channels don't have a simple store, we need a channel map.
-    // This is a simplified version — in production you'd store channels in the PtyStore.
-    Err("write_to_pty needs channel reference — use SSH channel directly in production".to_string())
+    let store = CHANNEL_STORE.lock().unwrap();
+    let entry = store.get(&pid).ok_or_else(|| format!("No channel for pid {}", pid))?;
+    entry
+        .channel
+        .write_all(data.as_bytes())
+        .map_err(|e| format!("Write error: {}", e))?;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn resize_pty(pid: u32, rows: u16, cols: u16) -> Result<(), String> {
-    // Simplified: in production, resize the SSH channel's PTY
+    let store = CHANNEL_STORE.lock().unwrap();
+    let entry = store.get(&pid).ok_or_else(|| format!("No channel for pid {}", pid))?;
+    entry
+        .channel
+        .request_pty_size(rows, cols)
+        .map_err(|e| format!("Resize error: {}", e))?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn kill_pty(pid: u32) -> Result<(), String> {
-    let mut store = PTY_STORE.processes.lock().unwrap();
-    if let Some(_proc) = store.remove(&pid) {
+    let mut store = CHANNEL_STORE.lock().unwrap();
+    if store.remove(&pid).is_some() {
         Ok(())
     } else {
-        Err(format!("No PTY found for pid {}", pid))
+        Err(format!("No channel found for pid {}", pid))
     }
 }

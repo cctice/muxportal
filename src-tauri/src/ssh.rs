@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 use ssh2::{Channel, Session as SshSession};
-use std::collections::HashMap;
 use std::net::TcpStream;
 use std::path::Path;
-use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshConfig {
@@ -96,17 +94,4 @@ pub fn exec_interactive(conn: &SshConnection, cmd: &str) -> Result<Channel, Stri
 
 fn dirs_home() -> String {
     std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())
-}
-
-/// Global store for active PTY processes
-pub struct PtyStore {
-    pub processes: Mutex<HashMap<u32, portable_pty::PtyProcess>>,
-}
-
-impl PtyStore {
-    pub fn new() -> Self {
-        Self {
-            processes: Mutex::new(HashMap::new()),
-        }
-    }
 }
