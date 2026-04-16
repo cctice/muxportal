@@ -1,4 +1,4 @@
-# 🦐 TmuxGUI
+# 🦐 MuxPortal
 
 **Termius with tmux** — An out-of-the-box SSH client with native tmux session management.
 
@@ -18,7 +18,7 @@
 
 ### Desktop
 
-Download from [GitHub Releases](https://github.com/cctice/tmuxgui/releases/latest):
+Download from [GitHub Releases](https://github.com/cctice/muxportal/releases/latest):
 
 | Platform | File |
 |----------|------|
@@ -37,7 +37,7 @@ Download from [GitHub Releases](https://github.com/cctice/tmuxgui/releases/lates
 
 1. Add a host connection (host, port, username, auth)
 2. Click a host to connect
-3. TmuxGUI auto-detects tmux sessions and shows them as tabs
+3. MuxPortal auto-detects tmux sessions and shows them as tabs
 4. Click a tab to attach, or create a new session
 
 ## 🛠 Build from Source
@@ -51,8 +51,8 @@ Download from [GitHub Releases](https://github.com/cctice/tmuxgui/releases/lates
 ### Desktop
 
 ```bash
-git clone https://github.com/cctice/tmuxgui.git
-cd tmuxgui
+git clone https://github.com/cctice/muxportal.git
+cd muxportal
 npm install
 npm run tauri dev     # Development
 npm run tauri build   # Production build

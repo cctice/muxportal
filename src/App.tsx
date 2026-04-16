@@ -33,7 +33,7 @@ export default function App() {
 
   const loadHosts = useCallback(async () => {
     try {
-      const saved = localStorage.getItem("tmuxgui_hosts");
+      const saved = localStorage.getItem("muxportal_hosts");
       if (saved) setHosts(JSON.parse(saved));
     } catch {
       // ignore
@@ -43,7 +43,7 @@ export default function App() {
   const saveHosts = useCallback(
     (updated: HostConfig[]) => {
       setHosts(updated);
-      localStorage.setItem("tmuxgui_hosts", JSON.stringify(updated));
+      localStorage.setItem("muxportal_hosts", JSON.stringify(updated));
     },
     []
   );
@@ -164,7 +164,7 @@ export default function App() {
 
       {!activeHost && (
         <div className="welcome-screen">
-          <h1>🦐 TmuxGUI</h1>
+          <h1>🦐 MuxPortal</h1>
           <p>Termius with tmux — SSH client with native tmux session management</p>
           <p>Select a host from the sidebar or add a new connection.</p>
         </div>

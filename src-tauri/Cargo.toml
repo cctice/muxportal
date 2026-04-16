@@ -1,12 +1,12 @@
 [package]
-name = "tmuxgui"
+name = "muxportal"
 version = "0.1.0"
 description = "Termius with tmux — SSH client with native tmux session management"
-authors = ["TmuxGUI Contributors"]
+authors = ["MuxPortal Contributors"]
 edition = "2021"
 
 [lib]
-name = "tmuxgui_lib"
+name = "muxportal_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
