@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import SessionTabs from "./components/SessionTabs";
 import Terminal from "./components/Terminal";
@@ -31,7 +31,8 @@ export default function App() {
   const [showConnectionForm, setShowConnectionForm] = useState(false);
   const [editingHost, setEditingHost] = useState<HostConfig | null>(null);
 
-  const loadHosts = useCallback(async () => {
+  // Load hosts from localStorage on mount
+  useEffect(() => {
     try {
       const saved = localStorage.getItem("muxportal_hosts");
       if (saved) setHosts(JSON.parse(saved));
