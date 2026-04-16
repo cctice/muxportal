@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -37,12 +38,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y perl make pkg-config
 
       - name: Set Android NDK env
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: |
-          echo "CC_aarch64_linux_android=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang" >> $GITHUB_ENV
-          echo "CXX_aarch64_linux_android=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang++" >> $GITHUB_ENV
-          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang" >> $GITHUB_ENV
+          NDK_HOME=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64
+          echo "CC_aarch64_linux_android=${NDK_HOME}/bin/aarch64-linux-android33-clang" >> $GITHUB_ENV
+          echo "CXX_aarch64_linux_android=${NDK_HOME}/bin/aarch64-linux-android33-clang++" >> $GITHUB_ENV
+          echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=${NDK_HOME}/bin/aarch64-linux-android33-clang" >> $GITHUB_ENV
+          echo "OPENSSL_NO_VENDOR=" >> $GITHUB_ENV
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
