@@ -1,20 +1,14 @@
-use crate::ssh::{connect, SshConfig, SshConnection};
+use crate::ssh::{connect, SshConfig};
 use crate::tmux::{self, TmuxSessionInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use tauri::{AppHandle, Emitter};
 use std::io::{Read, Write};
 use std::time::Duration;
 
-/// Store active SSH channels by ID for write/resize/kill
-struct ChannelEntry {
-    channel: ssh2::Channel,
-    session: ssh2::Session,
-    stream: std::net::TcpStream,
-}
-
-static CHANNEL_STORE: LazyLock<Mutex<HashMap<u32, ChannelEntry>>> =
+/// Store active terminal channels
+static TERM_STORE: LazyLock<Mutex<HashMap<u32, Arc<Mutex<ssh2::Channel>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static NEXT_PID: LazyLock<Mutex<u32>> = LazyLock::new(|| Mutex::new(1));
@@ -28,21 +22,10 @@ pub struct TmuxSession {
 }
 
 fn make_ssh_config(
-    host: String,
-    port: u16,
-    username: String,
-    auth_type: String,
-    password: String,
-    key_path: String,
+    host: String, port: u16, username: String, auth_type: String,
+    password: String, key_path: String,
 ) -> SshConfig {
-    SshConfig {
-        host,
-        port,
-        username,
-        auth_type,
-        password,
-        key_path,
-    }
+    SshConfig { host, port, username, auth_type, password, key_path }
 }
 
 fn next_pid() -> u32 {
@@ -54,37 +37,21 @@ fn next_pid() -> u32 {
 
 #[tauri::command]
 pub fn list_tmux_sessions(
-    host: String,
-    port: u16,
-    username: String,
-    auth_type: String,
-    password: String,
-    key_path: String,
+    host: String, port: u16, username: String, auth_type: String,
+    password: String, key_path: String,
 ) -> Result<Vec<TmuxSession>, String> {
     let config = make_ssh_config(host, port, username, auth_type, password, key_path);
     let conn = connect(&config)?;
     let sessions = tmux::list_sessions(&conn)?;
-
-    Ok(sessions
-        .into_iter()
-        .map(|s| TmuxSession {
-            name: s.name,
-            windows: s.windows,
-            created: s.created,
-            attached: s.attached,
-        })
-        .collect())
+    Ok(sessions.into_iter().map(|s| TmuxSession {
+        name: s.name, windows: s.windows, created: s.created, attached: s.attached,
+    }).collect())
 }
 
 #[tauri::command]
 pub fn create_tmux_session(
-    host: String,
-    port: u16,
-    username: String,
-    auth_type: String,
-    password: String,
-    key_path: String,
-    session_name: String,
+    host: String, port: u16, username: String, auth_type: String,
+    password: String, key_path: String, session_name: String,
 ) -> Result<(), String> {
     let config = make_ssh_config(host, port, username, auth_type, password, key_path);
     let conn = connect(&config)?;
@@ -94,13 +61,8 @@ pub fn create_tmux_session(
 
 #[tauri::command]
 pub fn kill_tmux_session(
-    host: String,
-    port: u16,
-    username: String,
-    auth_type: String,
-    password: String,
-    key_path: String,
-    session_name: String,
+    host: String, port: u16, username: String, auth_type: String,
+    password: String, key_path: String, session_name: String,
 ) -> Result<(), String> {
     let config = make_ssh_config(host, port, username, auth_type, password, key_path);
     let conn = connect(&config)?;
@@ -111,35 +73,21 @@ pub fn kill_tmux_session(
 #[tauri::command]
 pub fn attach_tmux_session(
     app: AppHandle,
-    host: String,
-    port: u16,
-    username: String,
-    auth_type: String,
-    password: String,
-    key_path: String,
-    session_name: String,
-    rows: u16,
-    cols: u16,
+    host: String, port: u16, username: String, auth_type: String,
+    password: String, key_path: String, session_name: String,
+    rows: u16, cols: u16,
 ) -> Result<u32, String> {
     let config = make_ssh_config(host, port, username, auth_type, password, key_path);
     let conn = connect(&config)?;
 
-    let mut channel = tmux::attach_session(&conn, &session_name, rows, cols)?;
-    channel.set_blocking(false);
+    let channel = tmux::attach_session(&conn, &session_name, rows, cols)?;
 
     let pid = next_pid();
+    let channel = Arc::new(Mutex::new(channel));
 
-    // Store the SSH connection for later write/resize/kill
     {
-        let mut store = CHANNEL_STORE.lock().unwrap();
-        store.insert(
-            pid,
-            ChannelEntry {
-                channel: conn.session.channel_session().map_err(|e| e.to_string())?,
-                session: conn.session,
-                stream: conn.stream,
-            },
-        );
+        let mut store = TERM_STORE.lock().unwrap();
+        store.insert(pid, Arc::clone(&channel));
     }
 
     // Spawn reader thread
@@ -147,7 +95,11 @@ pub fn attach_tmux_session(
     std::thread::spawn(move || {
         let mut buf = [0u8; 8192];
         loop {
-            match channel.read(&mut buf) {
+            let result = {
+                let mut ch = channel.lock().unwrap();
+                ch.read(&mut buf)
+            };
+            match result {
                 Ok(0) => break,
                 Ok(n) => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
@@ -155,7 +107,7 @@ pub fn attach_tmux_session(
                 }
                 Err(e) => {
                     if e.kind() == std::io::ErrorKind::WouldBlock {
-                        std::thread::sleep(Duration::from_millis(10));
+                        std::thread::sleep(Duration::from_millis(16));
                         continue;
                     }
                     break;
@@ -173,32 +125,22 @@ pub fn attach_tmux_session(
 
 #[tauri::command]
 pub fn write_to_pty(pid: u32, data: String) -> Result<(), String> {
-    let store = CHANNEL_STORE.lock().unwrap();
-    let entry = store.get(&pid).ok_or_else(|| format!("No channel for pid {}", pid))?;
-    entry
-        .channel
-        .write_all(data.as_bytes())
-        .map_err(|e| format!("Write error: {}", e))?;
-    Ok(())
+    let store = TERM_STORE.lock().unwrap();
+    let entry = store.get(&pid).ok_or(format!("No terminal for pid {}", pid))?;
+    let mut ch = entry.lock().unwrap();
+    ch.write_all(data.as_bytes()).map_err(|e| format!("Write error: {}", e))
 }
 
 #[tauri::command]
 pub fn resize_pty(pid: u32, rows: u16, cols: u16) -> Result<(), String> {
-    let store = CHANNEL_STORE.lock().unwrap();
-    let entry = store.get(&pid).ok_or_else(|| format!("No channel for pid {}", pid))?;
-    entry
-        .channel
-        .request_pty_size(rows, cols)
-        .map_err(|e| format!("Resize error: {}", e))?;
-    Ok(())
+    let store = TERM_STORE.lock().unwrap();
+    let entry = store.get(&pid).ok_or(format!("No terminal for pid {}", pid))?;
+    let ch = entry.lock().unwrap();
+    ch.request_pty_size(rows, cols).map_err(|e| format!("Resize error: {}", e))
 }
 
 #[tauri::command]
 pub fn kill_pty(pid: u32) -> Result<(), String> {
-    let mut store = CHANNEL_STORE.lock().unwrap();
-    if store.remove(&pid).is_some() {
-        Ok(())
-    } else {
-        Err(format!("No channel found for pid {}", pid))
-    }
+    let mut store = TERM_STORE.lock().unwrap();
+    store.remove(&pid).map(|_| ()).ok_or(format!("No terminal for pid {}", pid))
 }
