@@ -43,9 +43,6 @@ export default function App() {
   useEffect(() => {
     loadHosts();
   }, [loadHosts]);
-      // ignore
-    }
-  }, []);
 
   const saveHosts = useCallback(
     (updated: HostConfig[]) => {
