@@ -58,7 +58,7 @@ pub fn exec_command(conn: &SshConnection, cmd: &str) -> Result<String, String> {
         .channel_session()
         .map_err(|e| format!("Open channel: {}", e))?;
 
-    channel.exec(true, cmd).map_err(|e| format!("Exec command: {}", e))?;
+    channel.exec(cmd).map_err(|e| format!("Exec command: {}", e))?;
 
     let mut output = String::new();
     channel.read_to_string(&mut output).map_err(|e| format!("Read output: {}", e))?;
@@ -75,10 +75,10 @@ pub fn exec_interactive(conn: &SshConnection, cmd: &str) -> Result<Channel, Stri
         .map_err(|e| format!("Open channel: {}", e))?;
 
     channel
-        .request_pty("xterm-256color", 24, 80, None)
+        .request_pty("xterm-256color", None, Some((80, 24, 0, 0)))
         .map_err(|e| format!("Request PTY: {}", e))?;
 
-    channel.exec(true, cmd).map_err(|e| format!("Exec: {}", e))?;
+    channel.exec(cmd).map_err(|e| format!("Exec: {}", e))?;
 
     Ok(channel)
 }

@@ -78,7 +78,7 @@ pub fn attach_session(
 
     // Resize the remote PTY to match local dimensions
     channel
-        .request_pty_size(rows, cols)
+        .request_pty_size(cols as u32, rows as u32, Some(0), Some(0))
         .map_err(|e| format!("Resize PTY: {}", e))?;
 
     Ok(channel)

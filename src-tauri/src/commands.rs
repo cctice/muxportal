@@ -135,8 +135,8 @@ pub fn write_to_pty(pid: u32, data: String) -> Result<(), String> {
 pub fn resize_pty(pid: u32, rows: u16, cols: u16) -> Result<(), String> {
     let store = TERM_STORE.lock().unwrap();
     let entry = store.get(&pid).ok_or(format!("No terminal for pid {}", pid))?;
-    let ch = entry.lock().unwrap();
-    ch.request_pty_size(rows, cols).map_err(|e| format!("Resize error: {}", e))
+    let mut ch = entry.lock().unwrap();
+    ch.request_pty_size(cols as u32, rows as u32, Some(0), Some(0)).map_err(|e| format!("Resize error: {}", e))
 }
 
 #[tauri::command]
