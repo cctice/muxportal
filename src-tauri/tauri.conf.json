@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicefeel/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "MuxPortal",
   "version": "0.1.0",
-  "identifier": "com.muxportal.app",
+  "identifier": "com.muxportal.client",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",

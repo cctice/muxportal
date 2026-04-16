@@ -31,12 +31,18 @@ export default function App() {
   const [showConnectionForm, setShowConnectionForm] = useState(false);
   const [editingHost, setEditingHost] = useState<HostConfig | null>(null);
 
-  // Load hosts from localStorage on mount
-  useEffect(() => {
+  const loadHosts = useCallback(() => {
     try {
       const saved = localStorage.getItem("muxportal_hosts");
       if (saved) setHosts(JSON.parse(saved));
     } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHosts();
+  }, [loadHosts]);
       // ignore
     }
   }, []);
